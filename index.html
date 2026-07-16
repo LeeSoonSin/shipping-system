@@ -17,20 +17,39 @@
 </head>
 <body>
 
-    <header>
-        <h1>📡 물류 출고 일정 관리 시스템 (실시간 팀 공유형)</h1>
-    </header>
-
-    <div class="calendar-card">
-        <div class="calendar-header">
-            <button class="btn btn-secondary" onclick="changeMonth(-1)">◀ 이전달</button>
-            <h2 id="calendarTitle">2026년 07월</h2>
-            <button class="btn btn-secondary" onclick="changeMonth(1)">다음달 ▶</button>
+    <!-- 🔒 접속 비밀번호 입력 화면 (인증 전까지 화면을 가립니다) -->
+    <div id="loginOverlay" class="login-overlay">
+        <div class="login-card">
+            <h2>🔒 시스템 접속 인증</h2>
+            <p>공유된 접속 비밀번호를 입력해 주세요.</p>
+            <form id="loginForm">
+                <input type="password" id="accessPassword" class="form-control" placeholder="비밀번호 입력" required autofocus>
+                <button type="submit" class="btn" style="width: 100%; margin-top: 15px;">접속하기</button>
+            </form>
+            <p id="loginError" class="error-msg" style="display: none;">❌ 비밀번호가 올바르지 않습니다.</p>
         </div>
-        <div class="calendar-grid" id="calendarGrid">
-            </div>
     </div>
 
+    <!-- 🖥️ 실제 메인 콘텐츠 (인증 성공 전까지 숨김 처리) -->
+    <div id="mainContent" style="display: none;">
+        <header style="display: flex; justify-content: space-between; align-items: center; padding: 0 20px;">
+            <h1>📡 물류 출고 일정 관리 시스템 (실시간 팀 공유형)</h1>
+            <button class="btn btn-secondary" id="btnLogout" style="font-size: 14px; padding: 6px 12px;">🔒 로그아웃</button>
+        </header>
+
+        <div class="calendar-card">
+            <div class="calendar-header">
+                <button class="btn btn-secondary" id="btnPrevMonth">◀ 이전달</button>
+                <h2 id="calendarTitle">2026년 07월</h2>
+                <button class="btn btn-secondary" id="btnNextMonth">다음달 ▶</button>
+            </div>
+            <div class="calendar-grid" id="calendarGrid">
+                <!-- JS로 자동 생성됨 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 대형 팝업 모달 창 (기존 구조 유지) -->
     <div id="dateModal" class="modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -96,6 +115,7 @@
         </div>
     </div>
 
+    <!-- 모듈 기반의 메인 스크립트 연결 유지 -->
     <script type="module" src="script.js"></script>
 </body>
 </html>

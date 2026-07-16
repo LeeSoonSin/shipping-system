@@ -95,3 +95,52 @@ header h1 { font-size: 20px; color: var(--primary-color); }
 .inline-form { display: flex; gap: 10px; align-items: center; }
 .form-group { flex: 1; }
 .form-control { width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px; }
+
+
+/* ==========================================================================
+   🔒 접속 비밀번호 레이어 전용 디자인 (추가된 부분)
+   ========================================================================== */
+
+.login-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--bg-color); /* 기존 테마 배경색 유지 */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.login-card {
+    background-color: var(--card-bg);
+    padding: 35px 30px;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+    border: 1px solid var(--border-color);
+}
+
+.login-card h2 {
+    font-size: 22px;
+    color: var(--primary-color);
+    margin-bottom: 10px;
+    font-weight: bold;
+}
+
+.login-card p {
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 25px;
+}
+
+.error-msg {
+    color: var(--sunday-color); /* 테마에 정의된 빨간색 사용 */
+    font-size: 13px;
+    font-weight: bold;
+    margin-top: 15px;
+}

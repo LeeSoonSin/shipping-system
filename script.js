@@ -1,6 +1,9 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getDatabase, ref, set, push, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
+// 🔑 [설정] 시스템 접속 비밀번호 (원하시는 비밀번호로 자유롭게 변경하세요!)
+const ACCESS_PASSWORD = "1234"; 
+
 // ⚠️ [필독] 구글 파이어베이스 콘솔에서 발급받은 키값을 여기에 정확히 복사해 붙여넣으세요!
 const firebaseConfig = {
     apiKey: "AIzaSyACQPQZwIWZS0v8dh2VcPBvp0VEXTzq0mw",
@@ -24,21 +27,84 @@ let currentFilterCustomer = "";
 
 // 초기 구동 및 이벤트 리스너 바인딩
 window.onload = function() {
-    startRealtimeSync(); // 서버 실시간 리스너 작동 개시
-    
-    // 버튼 및 이벤트 바인딩
+    // 🔒 로그인 인증 여부 판단
+    if (sessionStorage.getItem('isAuthorized') === 'true') {
+        showMainContent();
+    } else {
+        showLoginOverlay();
+    }
+
+    // 로그인 관련 이벤트 연결
+    document.getElementById('loginForm').addEventListener('submit', checkPassword);
+    document.getElementById('btnLogout').onclick = handleLogout;
+
+    // 기존 버튼 및 이벤트 바인딩 유지
     document.getElementById('bulkPasteInput').addEventListener('paste', handleBulkPaste);
     document.getElementById('scheduleForm').addEventListener('submit', saveRecord);
     document.getElementById('btnCloseModal').onclick = closeModal;
     document.getElementById('btnExport').onclick = exportToExcel;
     document.getElementById('pasteZone').onclick = () => document.getElementById('bulkPasteInput').focus();
     
-    // 달력 화살표 이벤트 연결을 위해 전역 스코프 대신 직접 지정
+    // 달력 화살표 이벤트 연결
+    document.getElementById('btnPrevMonth').onclick = () => changeMonth(-1);
+    document.getElementById('btnNextMonth').onclick = () => changeMonth(1);
+
+    // 전역 스코프 유지용
     window.changeMonth = function(dir) {
         currentDate.setMonth(currentDate.getMonth() + dir);
         renderCalendar();
     };
 };
+
+/* ==========================================================================
+   🔒 접속 비밀번호 보안 제어 영역
+   ========================================================================== */
+
+// 1. 비밀번호 일치 검사
+function checkPassword(e) {
+    e.preventDefault();
+    const inputPw = document.getElementById('accessPassword').value;
+    const errorMsg = document.getElementById('loginError');
+
+    if (inputPw === ACCESS_PASSWORD) {
+        // 일치 시 브라우저 세션 스토리지에 로그인 정보 저장 (탭을 닫기 전까지 로그인 상태 유지)
+        sessionStorage.setItem('isAuthorized', 'true');
+        errorMsg.style.display = 'none';
+        showMainContent();
+    } else {
+        errorMsg.style.display = 'block';
+        document.getElementById('accessPassword').value = "";
+        document.getElementById('accessPassword').focus();
+    }
+}
+
+// 2. 메인 콘텐츠 활성화 (인증 성공 시)
+function showMainContent() {
+    document.getElementById('loginOverlay').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+    
+    // 메인 화면 활성화된 후에 클라우드 연동 및 달력 드로잉 시작
+    startRealtimeSync(); 
+}
+
+// 3. 로그인 대기 화면 전환
+function showLoginOverlay() {
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('mainContent').style.display = 'none';
+}
+
+// 4. 로그아웃 (세션 초기화 및 잠금)
+function handleLogout() {
+    if (confirm("출고 시스템에서 로그아웃하시겠습니까?")) {
+        sessionStorage.removeItem('isAuthorized');
+        location.reload(); // 새로고침하여 로그인 대기 화면으로 완전히 전환
+    }
+}
+
+
+/* ==========================================================================
+   📡 실시간 데이터 연동 및 업무 로직 (기존 원본 로직 유지)
+   ========================================================================== */
 
 // 1. 핵심: 클라우드 DB 전체 데이터 실시간 리스너 작동
 function startRealtimeSync() {
