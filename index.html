@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실시간 공유 출고 관리 시스템</title>
+    <link rel="stylesheet" href="style.css">
+    
+    <script type="importmap">
+      {
+        "imports": {
+          "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js": "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
+          "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js": "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js"
+        }
+      }
+    </script>
+</head>
+<body>
+
+    <header>
+        <h1>📡 물류 출고 일정 관리 시스템 (실시간 팀 공유형)</h1>
+    </header>
+
+    <div class="calendar-card">
+        <div class="calendar-header">
+            <button class="btn btn-secondary" onclick="changeMonth(-1)">◀ 이전달</button>
+            <h2 id="calendarTitle">2026년 07월</h2>
+            <button class="btn btn-secondary" onclick="changeMonth(1)">다음달 ▶</button>
+        </div>
+        <div class="calendar-grid" id="calendarGrid">
+            </div>
+    </div>
+
+    <div id="dateModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="selectedDateText">📅 출고 내역 현황</h2>
+                <div class="modal-header-btns">
+                    <button class="btn btn-success" id="btnExport">🖨️ 이 날짜 엑셀 다운로드</button>
+                    <button class="btn btn-close" id="btnCloseModal">❌ 닫기</button>
+                </div>
+            </div>
+
+            <div class="modal-body">
+                <div class="excel-paste-section">
+                    <div class="paste-zone" id="pasteZone">
+                        📋 <b>[엑셀 데이터 빠른 복사-붙여넣기 영역]</b><br>
+                        엑셀에서 <span style="color:#16a34a; font-weight:bold;">[품목명], [수량], [고객사]</span> 3개 열을 복사(Ctrl+C)한 뒤, 
+                        <u>여기 박스를 클릭하고 Ctrl + V</u> 를 누르세요.
+                        <input type="text" id="bulkPasteInput" style="position:absolute; opacity:0; width:1px; height:1px;">
+                    </div>
+                </div>
+
+                <div class="main-content-layout">
+                    
+                    <div class="customer-sidebar">
+                        <h3>🏢 고객사 목록</h3>
+                        <ul id="customerFilterList"></ul>
+                    </div>
+
+                    <div class="table-container">
+                        <div class="table-wrapper">
+                            <table class="record-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width: 55%">품목명</th>
+                                        <th style="width: 15%">수량</th>
+                                        <th style="width: 20%">고객사</th>
+                                        <th style="width: 10%">관리</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recordTableBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="manual-entry-section">
+                    <h4 style="margin-bottom: 8px; color: #555;">➕ 건별 직접 입력/수정</h4>
+                    <form id="scheduleForm" class="inline-form">
+                        <input type="hidden" id="editKey" value="">
+                        
+                        <div class="form-group" style="flex: 3;">
+                            <input type="text" id="itemName" class="form-control" required placeholder="품목 이름 입력">
+                        </div>
+                        <div class="form-group" style="flex: 1;">
+                            <input type="number" id="quantity" class="form-control" required min="1" placeholder="수량">
+                        </div>
+                        <div class="form-group" style="flex: 2;">
+                            <input type="text" id="customer" class="form-control" required placeholder="고객사 이름">
+                        </div>
+                        <button type="submit" class="btn">저장/수정</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
