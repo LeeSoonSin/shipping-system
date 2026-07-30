@@ -144,3 +144,69 @@ header h1 { font-size: 20px; color: var(--primary-color); }
     font-weight: bold;
     margin-top: 15px;
 }
+
+/* ==========================================================================
+   📊 엑셀 동기화 전용 모달 및 설정 UI 스타일
+   ========================================================================== */
+
+/* 엑셀 파일 선택 모달 내부 영역 */
+.excel-sync-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* 엑셀 열(Column) 및 시트 설정 그리드 */
+.excel-mapping-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    background-color: #f8fafc;
+    padding: 15px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.excel-mapping-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.excel-mapping-item label {
+    font-size: 13px;
+    font-weight: bold;
+    color: #475569;
+}
+
+/* 파일 드롭 및 안내 박스 (기존 paste-zone과 커스텀 스타일) */
+.excel-drop-zone {
+    background-color: #f0fdf4;
+    border: 2px dashed #16a34a;
+    padding: 25px;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.excel-drop-zone:hover {
+    background-color: #dcfce7;
+}
+
+/* 미리보기 데이터 테이블 스타일 */
+.excel-preview-wrapper {
+    max-height: 250px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.excel-badge-today {
+    background-color: #dcfce7;
+    color: #15803d;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: bold;
+}
