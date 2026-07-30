@@ -155,30 +155,25 @@ function parseExcelDate(cellValue) {
   return match ? match[0] : null;
 }
 
-// 엑셀 파일 읽기 및 Firebase 전송 핸들러 (진단 로그 강화 버전)
+// 엑셀 파일 읽기 및 Firebase 전송 핸들러 (중복 방지 / 덮어쓰기 적용 버전)
 function handleExcelSync(e) {
     const file = e.target.files[0];
     if (!file) return;
 
     if (typeof XLSX === 'undefined') {
-        console.error("❌ XLSX 라이브러리가 로드되지 않았습니다!");
         alert("엑셀 파싱 라이브러리(SheetJS)가 로드되지 않았습니다.");
         return;
     }
 
     const reader = new FileReader();
 
-    reader.onload = function(evt) {
+    reader.onload = async function(evt) {
         try {
             const data = new Uint8Array(evt.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
 
-            console.log("=== 📄 1. 엑셀 파일의 모든 시트 이름 ===");
-            console.log(workbook.SheetNames);
-
             const targetSheetName = '발주현황_LIST';
             if (!workbook.SheetNames.includes(targetSheetName)) {
-                console.error(`❌ '${targetSheetName}' 시트를 찾을 수 없습니다!`);
                 alert(`❌ 파일 내에 '${targetSheetName}' 시트가 존재하지 않습니다.`);
                 e.target.value = "";
                 return;
@@ -187,38 +182,23 @@ function handleExcelSync(e) {
             const worksheet = workbook.Sheets[targetSheetName];
             const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
 
-            console.log("=== 📊 2. 읽어온 전체 행(Row) 개수 ===", rows.length);
-
             if (rows.length < 6) {
-                console.warn("⚠️ 행 개수가 6개 미만입니다. 데이터가 부족합니다.");
-                alert("엑셀 파일에 데이터(6번째 행 이후)가 존재하지 않습니다.");
+                alert("엑셀 파일에 데이터가 존재하지 않습니다.");
                 e.target.value = "";
                 return;
             }
 
-            // 📌 6번째 행(index 5)의 전체 데이터 확인
-            const sampleRow = rows[5]; 
-            console.log("=== 🔍 3. 6번째 행(데이터 첫 줄)의 전체 열 데이터 ===");
-            console.log(sampleRow);
-
-            // 열 인덱스 정의 (J=9, M=12, U=20, W=22)
+            // 열 인덱스 (이전에 맞추신 인덱스로 유지)
             const COL_CUSTOMER = 8;  
             const COL_ITEM     = 11; 
             const COL_QTY      = 19; 
             const COL_DATE     = 21; 
 
-            console.log("=== 🎯 4. 지정한 열에서 뽑아낸 값 ===");
-            console.log("J열 (Index 9, 고객사) :", sampleRow[COL_CUSTOMER]);
-            console.log("M열 (Index 12, 품목명):", sampleRow[COL_ITEM]);
-            console.log("U열 (Index 20, 수량)  :", sampleRow[COL_QTY]);
-            console.log("W열 (Index 22, 날짜)  :", sampleRow[COL_DATE]);
-
             const todayStr = getTodayDateString();
-            console.log("📅 기준 오늘 날짜:", todayStr);
 
-            let addedCount = 0;
+            // 1단계: 엑셀에서 유효한 데이터들을 먼저 파싱하여 날짜별로 그룹화
+            const validDataByDate = {}; // { "2026-07-30": [ {name, qty, customer}, ... ] }
             let skippedCount = 0;
-            let failReasons = [];
 
             for (let i = 5; i < rows.length; i++) {
                 const row = rows[i];
@@ -232,39 +212,48 @@ function handleExcelSync(e) {
                 const dateStr = parseExcelDate(rawDate);
                 const customer = rawCustomer ? String(rawCustomer).trim() : "";
                 const name = rawItem ? String(rawItem).trim() : "";
-                const qty = parseInt(rawQty, 10);
+                const qty = parseInt(String(rawQty).replace(/,/g, ''), 10);
 
                 if (dateStr && name && customer && !isNaN(qty)) {
                     if (dateStr >= todayStr) {
-                        const newRecordRef = push(ref(db, `shippingData/${dateStr}`));
-                        set(newRecordRef, { name, qty, customer });
-                        addedCount++;
+                        if (!validDataByDate[dateStr]) {
+                            validDataByDate[dateStr] = [];
+                        }
+                        validDataByDate[dateStr].push({ name, qty, customer });
                     } else {
                         skippedCount++;
-                    }
-                } else {
-                    // 유효성 통과 실패 이유 저장 (최대 3건만)
-                    if (failReasons.length < 3) {
-                        failReasons.push({
-                            rowNum: i + 1,
-                            dateStr, name, customer, qty,
-                            rawDate, rawCustomer, rawItem, rawQty
-                        });
                     }
                 }
             }
 
-            console.log("=== 💡 5. 동기화 결과 요약 ===");
-            console.log(`성공: ${addedCount}건, 과거데이터 스킵: ${skippedCount}건, 파싱 실패: ${failReasons.length}건 이상`);
-            if (failReasons.length > 0) {
-                console.log("❌ 파싱 실패 예시 (상위 3건):", failReasons);
+            const targetDates = Object.keys(validDataByDate);
+            if (targetDates.length === 0) {
+                alert("동기화할 유효한 출고 데이터(오늘 이후)가 엑셀에 없습니다.");
+                e.target.value = "";
+                return;
             }
 
-            alert(`✅ 엑셀 동기화 완료!\n- 동기화 성공: ${addedCount}건\n- 과거 데이터 제외: ${skippedCount}건`);
+            // 2단계: 동기화 대상 날짜들의 기존 데이터 초기화(삭제) 후 최신 데이터 업로드 (덮어쓰기)
+            let totalAddedCount = 0;
+
+            for (const dateStr of targetDates) {
+                // 해당 날짜의 기존 Firebase 데이터 삭제
+                await remove(ref(db, `shippingData/${dateStr}`));
+
+                // 엑셀의 최신 데이터로 다시 push
+                const items = validDataByDate[dateStr];
+                for (const item of items) {
+                    const newRecordRef = push(ref(db, `shippingData/${dateStr}`));
+                    await set(newRecordRef, item);
+                    totalAddedCount++;
+                }
+            }
+
+            alert(`✅ 엑셀 동기화 완료! (중복 방지 덮어쓰기 적용)\n- 최신 반영 데이터: ${totalAddedCount}건 (${targetDates.length}개 일자)\n- 과거 데이터 제외: ${skippedCount}건`);
             
         } catch (err) {
-            console.error("💥 엑셀 처리 중 오류 발생:", err);
-            alert("엑셀 파일을 처리하는 중 오류가 발생했습니다.");
+            console.error("엑셀 동기화 오류:", err);
+            alert("엑셀 파일 처리 중 오류가 발생했습니다.");
         } finally {
             e.target.value = "";
         }
