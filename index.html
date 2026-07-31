@@ -17,7 +17,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   </head>
   <body>
-    <!-- 🔒 접속 비밀번호 입력 화면 (인증 전까지 화면을 가립니다) -->
+    <!-- 🔒 접속 비밀번호 입력 화면 -->
     <div id="loginOverlay" class="login-overlay">
       <div class="login-card">
         <h2>🔒 시스템 접속 인증</h2>
@@ -45,7 +45,7 @@
       </div>
     </div>
 
-    <!-- 🖥️ 실제 메인 콘텐츠 (인증 성공 전까지 숨김 처리) -->
+    <!-- 🖥️ 실제 메인 콘텐츠 -->
     <div id="mainContent" style="display: none">
       <header
         style="
@@ -81,6 +81,22 @@
         </div>
       </header>
 
+      <!-- 🔍 [신규] 실시간 품목/고객사 검색바 영역 -->
+      <div style="padding: 10px 20px 0 20px;">
+        <div style="display: flex; align-items: center; gap: 10px; background: #ffffff; padding: 12px 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+          <span style="font-size: 18px;">🔍</span>
+          <input 
+            type="text" 
+            id="searchInput" 
+            class="form-control" 
+            placeholder="찾으실 품목명 또는 고객사를 입력하세요... (예: A부품, 삼성전자)" 
+            style="flex: 1; font-size: 14px; padding: 8px 12px;"
+          >
+          <button class="btn btn-secondary" id="btnResetSearch" style="font-size: 13px; padding: 6px 12px; display: none;">초기화</button>
+        </div>
+        <div id="searchResultSummary" style="margin-top: 6px; font-size: 13px; color: #2563eb; font-weight: bold; padding-left: 4px; min-height: 20px;"></div>
+      </div>
+
       <div class="calendar-card">
         <div class="calendar-header">
           <button class="btn btn-secondary" id="btnPrevMonth">◀ 이전달</button>
@@ -93,7 +109,7 @@
       </div>
     </div>
 
-    <!-- 대형 팝업 모달 창 (기존 구조 유지) -->
+    <!-- 대형 팝업 모달 창 -->
     <div id="dateModal" class="modal-overlay">
       <div class="modal-content">
         <div class="modal-header">

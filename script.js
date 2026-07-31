@@ -6,6 +6,7 @@ import {
   push,
   onValue,
   remove,
+  update, // 👈 Batch Update를 위해 추가
 } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
 // 🔑 [설정] 시스템 접속 비밀번호
@@ -31,6 +32,7 @@ let globalAllData = {}; // 서버에서 실시간 동기화되는 데이터 저�
 let currentDate = new Date();
 let selectedDateStr = "";
 let currentFilterCustomer = "";
+let currentSearchKeyword = ""; // 🔍 검색 키워드 변수 추가
 
 // 초기 구동 및 이벤트 리스너 바인딩
 window.onload = function () {
@@ -70,6 +72,29 @@ window.onload = function () {
   if (btnUploadExcel && excelFileInput) {
     btnUploadExcel.onclick = () => excelFileInput.click();
     excelFileInput.onchange = handleExcelSync;
+  }
+
+  // 🔍 검색창 및 검색 초기화 버튼 이벤트 연동
+  const searchInput = document.getElementById("searchInput");
+  const btnResetSearch = document.getElementById("btnResetSearch");
+
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      currentSearchKeyword = e.target.value.trim().toLowerCase();
+      if (btnResetSearch) {
+        btnResetSearch.style.display = currentSearchKeyword ? "inline-block" : "none";
+      }
+      renderCalendar();
+    });
+  }
+
+  if (btnResetSearch) {
+    btnResetSearch.onclick = () => {
+      if (searchInput) searchInput.value = "";
+      currentSearchKeyword = "";
+      btnResetSearch.style.display = "none";
+      renderCalendar();
+    };
   }
 
   // 전역 스코프 유지용
@@ -118,20 +143,17 @@ function handleLogout() {
 }
 
 /* ==========================================================================
-   📊 [신규] 엑셀 자동 동기화 관련 핵심 파싱 기능 ('발주현황_LIST' 전용)
+   📊 엑셀 자동 동기화 기능 ('발주현황_LIST' 전용, 단 1회 Batch Update 방식)
    ========================================================================== */
 
-//오늘 날짜를 YYYY-MM-DD 형식으로 구함
 function getTodayDateString() {
   const today = new Date();
   return getFormattedDate(today);
 }
 
-// 엑셀 날짜 데이터를 표준 YYYY-MM-DD 문자열로 변환하는 유틸리티
 function parseExcelDate(cellValue) {
   if (!cellValue) return null;
 
-  // 1) 엑셀 날짜 일련번호(Serial Number)인 경우 (예: 45290)
   if (typeof cellValue === "number") {
     if (typeof XLSX !== "undefined" && XLSX.SSF) {
       const parsed = XLSX.SSF.parse_date_code(cellValue);
@@ -142,12 +164,10 @@ function parseExcelDate(cellValue) {
         return `${y}-${m}-${d}`;
       }
     }
-    // fallback 계산
     const dateObj = new Date(Math.round((cellValue - 25569) * 86400 * 1000));
     return getFormattedDate(dateObj);
   }
 
-  // 2) 문자열 형태인 경우 (예: "2026.08.01", "2026/08/01", "2026-08-01")
   const str = String(cellValue)
     .trim()
     .replace(/[\.\/]/g, "-");
@@ -155,115 +175,110 @@ function parseExcelDate(cellValue) {
   return match ? match[0] : null;
 }
 
-// 엑셀 파일 읽기 및 Firebase 전송 핸들러 (중복 방지 / 덮어쓰기 적용 버전)
-function handleExcelSync(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+async function handleExcelSync(e) {
+  const file = e.target.files[0];
+  if (!file) return;
 
-    if (typeof XLSX === 'undefined') {
-        alert("엑셀 파싱 라이브러리(SheetJS)가 로드되지 않았습니다.");
+  if (typeof XLSX === "undefined") {
+    alert("엑셀 파싱 라이브러리(SheetJS)가 로드되지 않았습니다.");
+    return;
+  }
+
+  const reader = new FileReader();
+
+  reader.onload = async function (evt) {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: "array" });
+
+      const targetSheetName = "발주현황_LIST";
+      if (!workbook.SheetNames.includes(targetSheetName)) {
+        alert(`❌ 파일 내에 '${targetSheetName}' 시트가 존재하지 않습니다.`);
+        e.target.value = "";
         return;
-    }
+      }
 
-    const reader = new FileReader();
+      const worksheet = workbook.Sheets[targetSheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
 
-    reader.onload = async function(evt) {
-        try {
-            const data = new Uint8Array(evt.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
+      if (rows.length <= 1) {
+        alert("엑셀 파일에 데이터가 존재하지 않습니다.");
+        e.target.value = "";
+        return;
+      }
 
-            const targetSheetName = '발주현황_LIST';
-            if (!workbook.SheetNames.includes(targetSheetName)) {
-                alert(`❌ 파일 내에 '${targetSheetName}' 시트가 존재하지 않습니다.`);
-                e.target.value = "";
-                return;
+      // 열 인덱스 지정: J열=9, M열=12, U열=20, W열=22
+      const COL_CUSTOMER = 9;
+      const COL_ITEM = 12;
+      const COL_QTY = 20;
+      const COL_DATE = 22;
+
+      const todayStr = getTodayDateString();
+      const validDataByDate = {};
+      let skippedCount = 0;
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || row.length === 0) continue;
+
+        const dateStr = parseExcelDate(row[COL_DATE]);
+        const customer = row[COL_CUSTOMER] ? String(row[COL_CUSTOMER]).trim() : "";
+        const name = row[COL_ITEM] ? String(row[COL_ITEM]).trim() : "";
+        const qty = parseInt(String(row[COL_QTY]).replace(/,/g, ""), 10);
+
+        if (dateStr && name && customer && !isNaN(qty)) {
+          if (dateStr >= todayStr) {
+            if (!validDataByDate[dateStr]) {
+              validDataByDate[dateStr] = [];
             }
-
-            const worksheet = workbook.Sheets[targetSheetName];
-            const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-
-            if (rows.length < 6) {
-                alert("엑셀 파일에 데이터가 존재하지 않습니다.");
-                e.target.value = "";
-                return;
-            }
-
-            // 열 인덱스 (이전에 맞추신 인덱스로 유지)
-            const COL_CUSTOMER = 8;  
-            const COL_ITEM     = 11; 
-            const COL_QTY      = 19; 
-            const COL_DATE     = 21; 
-
-            const todayStr = getTodayDateString();
-
-            // 1단계: 엑셀에서 유효한 데이터들을 먼저 파싱하여 날짜별로 그룹화
-            const validDataByDate = {}; // { "2026-07-30": [ {name, qty, customer}, ... ] }
-            let skippedCount = 0;
-
-            for (let i = 5; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row || row.length === 0) continue;
-
-                const rawDate = row[COL_DATE];
-                const rawCustomer = row[COL_CUSTOMER];
-                const rawItem = row[COL_ITEM];
-                const rawQty = row[COL_QTY];
-
-                const dateStr = parseExcelDate(rawDate);
-                const customer = rawCustomer ? String(rawCustomer).trim() : "";
-                const name = rawItem ? String(rawItem).trim() : "";
-                const qty = parseInt(String(rawQty).replace(/,/g, ''), 10);
-
-                if (dateStr && name && customer && !isNaN(qty)) {
-                    if (dateStr >= todayStr) {
-                        if (!validDataByDate[dateStr]) {
-                            validDataByDate[dateStr] = [];
-                        }
-                        validDataByDate[dateStr].push({ name, qty, customer });
-                    } else {
-                        skippedCount++;
-                    }
-                }
-            }
-
-            const targetDates = Object.keys(validDataByDate);
-            if (targetDates.length === 0) {
-                alert("동기화할 유효한 출고 데이터(오늘 이후)가 엑셀에 없습니다.");
-                e.target.value = "";
-                return;
-            }
-
-            // 2단계: 동기화 대상 날짜들의 기존 데이터 초기화(삭제) 후 최신 데이터 업로드 (덮어쓰기)
-            let totalAddedCount = 0;
-
-            for (const dateStr of targetDates) {
-                // 해당 날짜의 기존 Firebase 데이터 삭제
-                await remove(ref(db, `shippingData/${dateStr}`));
-
-                // 엑셀의 최신 데이터로 다시 push
-                const items = validDataByDate[dateStr];
-                for (const item of items) {
-                    const newRecordRef = push(ref(db, `shippingData/${dateStr}`));
-                    await set(newRecordRef, item);
-                    totalAddedCount++;
-                }
-            }
-
-            alert(`✅ 엑셀 동기화 완료! (중복 방지 덮어쓰기 적용)\n- 최신 반영 데이터: ${totalAddedCount}건 (${targetDates.length}개 일자)\n- 과거 데이터 제외: ${skippedCount}건`);
-            
-        } catch (err) {
-            console.error("엑셀 동기화 오류:", err);
-            alert("엑셀 파일 처리 중 오류가 발생했습니다.");
-        } finally {
-            e.target.value = "";
+            validDataByDate[dateStr].push({ name, qty, customer });
+          } else {
+            skippedCount++;
+          }
         }
-    };
+      }
 
-    reader.readAsArrayBuffer(file);
+      const targetDates = Object.keys(validDataByDate);
+      if (targetDates.length === 0) {
+        alert("동기화할 유효한 출고 데이터(오늘 이후)가 엑셀에 없습니다.");
+        e.target.value = "";
+        return;
+      }
+
+      // 🚀 반복문으로 단건 전송하지 않고, updates 객체에 모아서 단 1회 update 실행
+      let updates = {};
+      let totalAddedCount = 0;
+
+      for (const dateStr of targetDates) {
+        // 기존 날짜 항목 데이터 초기화
+        updates[`shippingData/${dateStr}`] = null;
+
+        const items = validDataByDate[dateStr];
+        items.forEach((item) => {
+          const newKey = push(ref(db, `shippingData/${dateStr}`)).key;
+          updates[`shippingData/${dateStr}/${newKey}`] = item;
+          totalAddedCount++;
+        });
+      }
+
+      await update(ref(db), updates);
+
+      alert(
+        `✅ 엑셀 동기화 완료!\n- 최신 반영 데이터: ${totalAddedCount}건 (${targetDates.length}개 일자)\n- 과거 데이터 제외: ${skippedCount}건`
+      );
+    } catch (err) {
+      console.error("엑셀 동기화 오류:", err);
+      alert("엑셀 파일 처리 중 오류가 발생했습니다.");
+    } finally {
+      e.target.value = "";
+    }
+  };
+
+  reader.readAsArrayBuffer(file);
 }
 
 /* ==========================================================================
-   📡 실시간 데이터 연동 및 업무 로직
+   📡 실시간 데이터 연동 및 달력 / 검색 렌더링
    ========================================================================== */
 
 function startRealtimeSync() {
@@ -282,8 +297,9 @@ function startRealtimeSync() {
 function renderCalendar() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
-  document.getElementById("calendarTitle").innerText =
-    `${year}년 ${String(month + 1).padStart(2, "0")}월`;
+  document.getElementById("calendarTitle").innerText = `${year}년 ${String(
+    month + 1
+  ).padStart(2, "0")}월`;
 
   const firstDay = new Date(year, month, 1).getDay();
   const lastDate = new Date(year, month + 1, 0).getDate();
@@ -300,53 +316,90 @@ function renderCalendar() {
     grid.appendChild(div);
   });
 
+  let totalMatchedDays = 0;
+  let totalMatchedRecords = 0;
+
+  const appendDay = (day, isOtherMonth, dateStr) => {
+    let cell = document.createElement("div");
+    cell.className = "day-cell";
+    if (isOtherMonth) cell.classList.add("other-month");
+    cell.onclick = () => openModal(dateStr);
+
+    let numDiv = document.createElement("div");
+    numDiv.className = "day-number";
+    numDiv.innerText = day;
+    cell.appendChild(numDiv);
+
+    if (globalAllData[dateStr]) {
+      const dayRecords = Object.values(globalAllData[dateStr]);
+      const totalCount = dayRecords.length;
+
+      if (totalCount > 0) {
+        let matchedCount = 0;
+        if (currentSearchKeyword) {
+          matchedCount = dayRecords.filter(
+            (r) =>
+              (r.name && r.name.toLowerCase().includes(currentSearchKeyword)) ||
+              (r.customer && r.customer.toLowerCase().includes(currentSearchKeyword))
+          ).length;
+        }
+
+        let sumDiv = document.createElement("div");
+        sumDiv.className = "day-summary";
+
+        if (currentSearchKeyword) {
+          if (matchedCount > 0) {
+            cell.classList.add("search-matched");
+            sumDiv.innerText = `🔍 검색 ${matchedCount}건`;
+
+            if (!isOtherMonth) {
+              totalMatchedDays++;
+              totalMatchedRecords += matchedCount;
+            }
+          } else {
+            sumDiv.innerText = `📦 출고 ${totalCount}건`;
+            cell.classList.add("search-dimmed");
+          }
+        } else {
+          sumDiv.innerText = `📦 출고 ${totalCount}건`;
+        }
+
+        cell.appendChild(sumDiv);
+      }
+    }
+    grid.appendChild(cell);
+  };
+
   for (let i = firstDay; i > 0; i--) {
     let dateStr = getFormattedDate(
-      new Date(year, month - 1, prevLastDate - i + 1),
+      new Date(year, month - 1, prevLastDate - i + 1)
     );
-    createDayCell(prevLastDate - i + 1, true, dateStr, grid);
+    appendDay(prevLastDate - i + 1, true, dateStr);
   }
   for (let i = 1; i <= lastDate; i++) {
     let dateStr = getFormattedDate(new Date(year, month, i));
-    createDayCell(i, false, dateStr, grid);
+    appendDay(i, false, dateStr);
   }
-  const totalCells = grid.children.length - 7;
-  const remaining = 42 - totalCells;
+  const remaining = 42 - (grid.children.length - 7);
   for (let i = 1; i <= remaining; i++) {
     let dateStr = getFormattedDate(new Date(year, month + 1, i));
-    createDayCell(i, true, dateStr, grid);
+    appendDay(i, true, dateStr);
   }
-}
 
-function createDayCell(day, isOtherMonth, dateStr, grid) {
-  let cell = document.createElement("div");
-  cell.className = "day-cell";
-  if (isOtherMonth) cell.classList.add("other-month");
-
-  cell.onclick = () => openModal(dateStr);
-
-  let numDiv = document.createElement("div");
-  numDiv.className = "day-number";
-  numDiv.innerText = day;
-  cell.appendChild(numDiv);
-
-  if (globalAllData[dateStr]) {
-    let count = Object.keys(globalAllData[dateStr]).length;
-    if (count > 0) {
-      let sumDiv = document.createElement("div");
-      sumDiv.className = "day-summary";
-      sumDiv.innerText = `📦 출고 ${count}건`;
-      cell.appendChild(sumDiv);
+  const summaryEl = document.getElementById("searchResultSummary");
+  if (summaryEl) {
+    if (currentSearchKeyword) {
+      summaryEl.innerText = `🔎 '${currentSearchKeyword}' 검색 결과: 총 ${totalMatchedDays}개 날짜에서 ${totalMatchedRecords}건 발견됨`;
+    } else {
+      summaryEl.innerText = "";
     }
   }
-  grid.appendChild(cell);
 }
 
 function openModal(dateStr) {
   selectedDateStr = dateStr;
   currentFilterCustomer = "";
-  document.getElementById("selectedDateText").innerText =
-    `📅 ${dateStr} 출고 내역 상세조회`;
+  document.getElementById("selectedDateText").innerText = `📅 ${dateStr} 출고 내역 상세조회`;
   document.getElementById("dateModal").style.display = "flex";
 
   updateCustomerSidebar();
@@ -422,28 +475,34 @@ function updateRecordTable() {
     ? records.filter((r) => r.customer === currentFilterCustomer)
     : records;
 
+  if (currentSearchKeyword) {
+    displayRecords = displayRecords.filter(
+      (r) =>
+        (r.name && r.name.toLowerCase().includes(currentSearchKeyword)) ||
+        (r.customer && r.customer.toLowerCase().includes(currentSearchKeyword))
+    );
+  }
+
   if (displayRecords.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #9ca3af; padding: 40px;">등록된 출고 내역이 없습니다. 위의 박스에 엑셀 데이터를 붙여넣어 보세요.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #9ca3af; padding: 40px;">등록되었거나 일치하는 출고 내역이 없습니다.</td></tr>`;
     return;
   }
 
   displayRecords.forEach((rec) => {
     let tr = document.createElement("tr");
     tr.innerHTML = `
-            <td style="font-weight: 500; color:#1e293b;">${rec.name}</td>
-            <td><span style="background-color:#f1f5f9; padding: 4px 8px; border-radius:4px; font-weight:bold;">${rec.qty}</span></td>
-            <td style="color: var(--primary-color); font-weight: bold;">${rec.customer}</td>
-            <td>
-                <button class="btn btn-sm btn-secondary" id="edit-${rec.fbKey}">수정</button>
-                <button class="btn btn-sm btn-close" id="del-${rec.fbKey}">삭제</button>
-            </td>
-        `;
+        <td style="font-weight: 500; color:#1e293b;">${rec.name}</td>
+        <td><span style="background-color:#f1f5f9; padding: 4px 8px; border-radius:4px; font-weight:bold;">${rec.qty}</span></td>
+        <td style="color: var(--primary-color); font-weight: bold;">${rec.customer}</td>
+        <td>
+            <button class="btn btn-sm btn-secondary" id="edit-${rec.fbKey}">수정</button>
+            <button class="btn btn-sm btn-close" id="del-${rec.fbKey}">삭제</button>
+        </td>
+    `;
     tbody.appendChild(tr);
 
-    document.getElementById(`edit-${rec.fbKey}`).onclick = () =>
-      editRecord(rec);
-    document.getElementById(`del-${rec.fbKey}`).onclick = () =>
-      deleteRecord(rec.fbKey);
+    document.getElementById(`edit-${rec.fbKey}`).onclick = () => editRecord(rec);
+    document.getElementById(`del-${rec.fbKey}`).onclick = () => deleteRecord(rec.fbKey);
   });
 }
 
@@ -474,13 +533,9 @@ function handleBulkPaste(e) {
   });
 
   if (parsedCount > 0) {
-    alert(
-      `클라우드 서버로 ${parsedCount}건의 데이터를 실시간 업로드했습니다! 팀원 화면에도 즉시 반영됩니다.`,
-    );
+    alert(`클라우드 서버로 ${parsedCount}건의 데이터를 실시간 업로드했습니다! 팀원 화면에도 즉시 반영됩니다.`);
   } else {
-    alert(
-      "데이터 파싱 실패. [품목명] [수량] [고객사] 세 열을 드래그했는지 확인하세요.",
-    );
+    alert("데이터 파싱 실패. [품목명] [수량] [고객사] 세 열을 드래그했는지 확인하세요.");
   }
 }
 
